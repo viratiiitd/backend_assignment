@@ -1,0 +1,47 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017
+      - DATABASE_NAME=chat_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - mongodb
+    restart: always
+    volumes:
+      - ./:/app
+    networks:
+      - chat-network
+
+  mongodb:
+    image: mongo:5.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - chat-network
+    restart: always
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: streamlit.Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - chat-network
+    restart: always
+
+networks:
+  chat-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
