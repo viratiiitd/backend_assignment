@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException, Depends, Query, Path, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from bson import ObjectId
+#from bson import ObjectId
+from bson.objectid import ObjectId
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -215,6 +216,49 @@ async def generate_summary_with_llm(messages: List[Dict[str, Any]]):
         logger.error(f"Error generating summary: {e}")
         return "Failed to generate summary. Please try again later."
 
+#some testing 
+
+# async def generate_summary_with_llm(messages: List[Dict[str, Any]]):
+#     if not messages:
+#         return "No messages to summarize."
+    
+#     try:
+#         # Format messages for the LLM
+#         message_texts = [f"{msg['user_id']}: {msg['content']}" for msg in messages]
+#         conversation_text = "\n".join(message_texts)
+        
+#         prompt = f"""
+#         Please provide a concise summary of the following conversation:
+        
+#         {conversation_text}
+        
+#         Summary:
+#         """
+        
+#         # Updated OpenAI API call
+#         from openai import AsyncOpenAI
+        
+#         # Initialize the client with the API key
+#         client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+#         # Call the API
+#         response = await client.chat.completions.create(
+#             model="gpt-3.5-turbo",
+#             messages=[
+#                 {"role": "system", "content": "You are a helpful assistant that summarizes conversations."},
+#                 {"role": "user", "content": prompt}
+#             ],
+#             max_tokens=200,
+#             temperature=0.5,
+#         )
+        
+#         return response.choices[0].message.content.strip()
+#     except Exception as e:
+#         logger.error(f"Error generating summary: {e}")
+#         import traceback
+#         logger.error(traceback.format_exc())
+#         return f"Failed to generate summary. Error: {str(e)}"
+
 async def generate_insights_with_llm(messages: List[Dict[str, Any]]):
     if not messages:
         return {"sentiment": "neutral", "keywords": [], "topics": []}
@@ -331,6 +375,22 @@ async def create_chat_message(message: MessageCreate, background_tasks: Backgrou
         logger.error(f"Error creating message: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+@app.get("/users", response_model=List[UserModel])
+async def get_users(db=Depends(get_db)):
+    try:
+        # Get all users
+        cursor = db.users.find()
+        users = await cursor.to_list(length=100)  # Limit to 100 users
+        
+        # Convert ObjectId to string for JSON response
+        for user in users:
+            user["_id"] = str(user["_id"])
+        
+        return users
+    except Exception as e:
+        logger.error(f"Error retrieving users: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 @app.get("/chats/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(
     conversation_id: str = Path(..., description="The ID of the conversation to retrieve"),
@@ -396,53 +456,105 @@ async def summarize_chat(request: SummarizationRequest, db=Depends(get_db)):
         logger.error(f"Error summarizing conversation: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+# @app.get("/users/{user_id}/chats")
+# async def get_user_chats(
+#     user_id: str = Path(..., description="The ID of the user"),
+#     page: int = Query(1, ge=1, description="Page number for pagination"),
+#     limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+#     db=Depends(get_db)
+# ):
+#     try:
+#         if not ObjectId.is_valid(user_id):
+#             raise HTTPException(status_code=400, detail="Invalid user ID format")
+        
+#         user_obj_id = ObjectId(user_id)
+        
+#         # Check if user exists
+#         user = await db.users.find_one({"_id": user_obj_id})
+#         if not user:
+#             raise HTTPException(status_code=404, detail="User not found")
+        
+#         # Calculate skip value for pagination
+#         skip = (page - 1) * limit
+        
+#         # Get conversations where user is a participant
+#         cursor = db.conversations.find(
+#             {"participants": user_obj_id}
+#         ).sort("updated_at", -1).skip(skip).limit(limit)
+        
+#         conversations = await cursor.to_list(length=limit)
+        
+#         # Count total conversations for pagination info
+#         total_conversations = await db.conversations.count_documents({"participants": user_obj_id})
+        
+#         # Convert ObjectId to string for JSON response
+#         conversations = convert_objectid_to_str(conversations)
+#         for conversation in conversations:
+#             conversation["id"] = conversation.pop("_id")
+        
+#         return {
+#             "total": total_conversations,
+#             "page": page,
+#             "limit": limit,
+#             "total_pages": (total_conversations + limit - 1) // limit,
+#             "conversations": conversations
+#         }
+#     except HTTPException as e:
+#         raise e
+#     except Exception as e:
+#         logger.error(f"Error retrieving user chats: {e}")
+#         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+# Find the function that gets user conversations, it might look like:
 @app.get("/users/{user_id}/chats")
 async def get_user_chats(
-    user_id: str = Path(..., description="The ID of the user"),
-    page: int = Query(1, ge=1, description="Page number for pagination"),
-    limit: int = Query(10, ge=1, le=100, description="Number of items per page"),
+    user_id: str = Path(...),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
     db=Depends(get_db)
 ):
     try:
+        # Make sure you're converting string ID to ObjectId
         if not ObjectId.is_valid(user_id):
             raise HTTPException(status_code=400, detail="Invalid user ID format")
         
         user_obj_id = ObjectId(user_id)
         
-        # Check if user exists
+        # Check if user exists (add this if not already there)
         user = await db.users.find_one({"_id": user_obj_id})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Calculate skip value for pagination
-        skip = (page - 1) * limit
-        
-        # Get conversations where user is a participant
+        # Get conversations with proper error handling
         cursor = db.conversations.find(
             {"participants": user_obj_id}
-        ).sort("updated_at", -1).skip(skip).limit(limit)
+        ).sort("updated_at", -1)
         
-        conversations = await cursor.to_list(length=limit)
+        # Print debug info
+        print(f"Looking for conversations with participant: {user_id}")
         
-        # Count total conversations for pagination info
-        total_conversations = await db.conversations.count_documents({"participants": user_obj_id})
+        # Return empty list if no conversations yet
+        conversations = await cursor.to_list(length=None) or []
         
-        # Convert ObjectId to string for JSON response
-        conversations = convert_objectid_to_str(conversations)
+        # Convert ObjectId to string
         for conversation in conversations:
-            conversation["id"] = conversation.pop("_id")
+            conversation["_id"] = str(conversation["_id"])
+            # Convert participant IDs too
+            conversation["participants"] = [str(p) for p in conversation["participants"]]
         
         return {
-            "total": total_conversations,
+            "conversations": conversations,
+            "total": len(conversations),
             "page": page,
             "limit": limit,
-            "total_pages": (total_conversations + limit - 1) // limit,
-            "conversations": conversations
+            "total_pages": max(1, (len(conversations) + limit - 1) // limit)
         }
     except HTTPException as e:
         raise e
     except Exception as e:
-        logger.error(f"Error retrieving user chats: {e}")
+        # Log the actual error
+        print(f"Error in get_user_chats: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.delete("/chats/{conversation_id}", status_code=204)

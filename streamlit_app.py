@@ -11,11 +11,17 @@ import threading
 import time
 from dotenv import load_dotenv
 
+def get_conversation_id(conversation_dict):
+    """Safely get conversation ID from a dictionary that might use 'id' or '_id'"""
+    if not conversation_dict:
+        return None
+    return conversation_dict.get("id") or conversation_dict.get("_id")
+
 # Load environment variables
 load_dotenv()
 
 # API Configuration
-API_URL = os.getenv("API_URL", "http://api:8000")
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # Set page configuration
 st.set_page_config(
@@ -39,11 +45,11 @@ st.markdown("""
         flex-direction: column;
     }
     .chat-message.user {
-        background-color: #e6f7ff;
+        background-color: #323223;
         border-left: 5px solid #1890ff;
     }
     .chat-message.other {
-        background-color: #f6f6f6;
+        background-color: #666666;
         border-left: 5px solid #d9d9d9;
     }
     .chat-header {
@@ -54,14 +60,14 @@ st.markdown("""
         white-space: pre-wrap;
     }
     .summary-box {
-        background-color: #fffbe6;
+        background-color: #93ca00;
         border-left: 5px solid #faad14;
         padding: 1rem;
         border-radius: 0.5rem;
         margin-bottom: 1rem;
     }
     .insights-box {
-        background-color: #f6ffed;
+        background-color: #500202;
         border-left: 5px solid #52c41a;
         padding: 1rem;
         border-radius: 0.5rem;
@@ -308,11 +314,21 @@ with st.sidebar:
             all_users = fetch_users()
             participant_options = [(user["_id"], user["username"]) for user in all_users]
             
+            # selected_participants = st.multiselect(
+            #     "Select participants",
+            #     options=[option[0] for option in participant_options],
+            #     format_func=lambda x: next((option[1] for option in participant_options if option[0] == x), x),
+            #     default=[st.session_state.active_user["_id"]]
+            # )
+            user_id = st.session_state.active_user["_id"]
+            participant_ids = [option[0] for option in participant_options]
+            default_selection = [user_id] if user_id in participant_ids else []
+
             selected_participants = st.multiselect(
                 "Select participants",
-                options=[option[0] for option in participant_options],
+                options=participant_ids,
                 format_func=lambda x: next((option[1] for option in participant_options if option[0] == x), x),
-                default=[st.session_state.active_user["_id"]]
+                default=default_selection
             )
             
             if st.button("Create Conversation"):
@@ -361,10 +377,25 @@ with st.sidebar:
             st.session_state.active_conversation = conversation_map[selected_conversation]
             
             # Connect to WebSocket for real-time updates
-            connect_to_websocket(st.session_state.active_conversation["id"])
+            #connect_to_websocket(st.session_state.active_conversation["id"])
+            if st.session_state.active_conversation:
+                conversation_id = st.session_state.active_conversation.get("id") or st.session_state.active_conversation.get("_id")
+                if conversation_id:
+                    connect_to_websocket(conversation_id)
+                else:
+                    st.error("Conversation ID not found in the active conversation.")
             
             # Also load conversation data through REST API as a fallback
-            conversation_data = fetch_conversation(st.session_state.active_conversation["id"])
+            #conversation_data = fetch_conversation(st.session_state.active_conversation["id"])
+            if st.session_state.active_conversation:
+                conversation_id = st.session_state.active_conversation.get("id") or st.session_state.active_conversation.get("_id")
+                if conversation_id:
+                    conversation_data = fetch_conversation(conversation_id)
+                else:
+                    st.error("Conversation ID not found in the active conversation.")
+                    conversation_data = None
+            else:
+                conversation_data = None
             if conversation_data:
                 st.session_state.messages = conversation_data.get("messages", [])
                 st.session_state.summary = conversation_data.get("summary")
@@ -373,7 +404,7 @@ with st.sidebar:
             st.subheader("Actions")
             
             if st.button("Generate Summary"):
-                summary_result = summarize_conversation(st.session_state.active_conversation["id"])
+                summary_result = summarize_conversation(get_conversation_id(st.session_state.active_conversation))
                 if summary_result:
                     st.session_state.summary = summary_result.get("summary")
                     st.session_state.insights = summary_result.get("insights")
@@ -381,7 +412,7 @@ with st.sidebar:
                     st.experimental_rerun()
             
             if st.button("Generate Insights"):
-                insights_result = get_conversation_insights(st.session_state.active_conversation["id"])
+                insights_result = get_conversation_insights(get_conversation_id(st.session_state.active_conversation))
                 if insights_result:
                     st.session_state.insights = insights_result.get("insights")
                     st.success("Insights generated successfully!")
@@ -507,7 +538,7 @@ else:
                     st.error(f"Error sending message via WebSocket: {e}")
                     # Fallback to REST API
                     message = send_message(
-                        st.session_state.active_conversation["id"],
+                        get_conversation_id(st.session_state.active_conversation),
                         st.session_state.active_user["_id"],
                         message_content
                     )
@@ -518,7 +549,8 @@ else:
             else:
                 # Fallback to REST API if WebSocket is not connected
                 message = send_message(
-                    st.session_state.active_conversation["id"],
+                    #st.session_state.active_conversation["id"],
+                    st.session_state.active_conversation.get("id") or st.session_state.active_conversation.get("_id", ""),
                     st.session_state.active_user["_id"],
                     message_content
                 )
