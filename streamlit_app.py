@@ -493,7 +493,17 @@ else:
         
         # Check if this message is from the current user
         is_current_user = user_id == st.session_state.active_user["_id"]
-        
+        # __________Timestamp formatting try block starts________
+        try:
+            timestamp_str = message.get('timestamp', '')
+            if timestamp_str:
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                timestamp = "Unknown time"
+        except Exception as e:
+            print(f"Error parsing timestamp: {e}")
+            timestamp = "Date format error"
+        # ___________Timestamp formatting try block ends__________
         # Display message with appropriate styling
         st.markdown(f"""
         <div class="chat-message {'user' if is_current_user else 'other'}">

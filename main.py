@@ -426,6 +426,40 @@ async def get_users(db=Depends(get_db)):
     except Exception as e:
         logger.error(f"Error retrieving users: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    
+# _______________________original code below this_____________________________
+
+# @app.get("/chats/{conversation_id}", response_model=ConversationResponse)
+# async def get_conversation(
+#     conversation_id: str = Path(..., description="The ID of the conversation to retrieve"),
+#     db=Depends(get_db)
+# ):
+#     try:
+#         if not ObjectId.is_valid(conversation_id):
+#             raise HTTPException(status_code=400, detail="Invalid conversation ID format")
+        
+#         conversation_obj_id = ObjectId(conversation_id)
+#         conversation = await db.conversations.find_one({"_id": conversation_obj_id})
+        
+#         if not conversation:
+#             raise HTTPException(status_code=404, detail="Conversation not found")
+        
+#         # Get messages for this conversation
+#         messages = await get_messages_for_conversation(db, conversation_obj_id)
+        
+#         # Convert ObjectId to string for JSON response
+#         conversation = convert_objectid_to_str(conversation)
+#         conversation["id"] = conversation.pop("_id")
+#         conversation["messages"] = messages
+        
+#         return conversation
+#     except HTTPException as e:
+#         raise e
+#     except Exception as e:
+#         logger.error(f"Error retrieving conversation: {e}")
+#         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+# ________________________________original code above this_____________________________
 
 @app.get("/chats/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(
@@ -442,19 +476,41 @@ async def get_conversation(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
         
+        # Log the raw conversation data
+        print(f"Raw conversation data: {conversation}")
+        
         # Get messages for this conversation
-        messages = await get_messages_for_conversation(db, conversation_obj_id)
+        try:
+            messages = await get_messages_for_conversation(db, conversation_obj_id)
+            print(f"Retrieved {len(messages)} messages")
+        except Exception as msg_error:
+            print(f"Error getting messages: {msg_error}")
+            messages = []
         
-        # Convert ObjectId to string for JSON response
-        conversation = convert_objectid_to_str(conversation)
-        conversation["id"] = conversation.pop("_id")
-        conversation["messages"] = messages
-        
-        return conversation
+        # Convert ObjectId to string for JSON response - do this more explicitly
+        try:
+            conversation_copy = dict(conversation)  # Make a copy to avoid modifying the original
+            for key, value in conversation_copy.items():
+                if isinstance(value, ObjectId):
+                    conversation_copy[key] = str(value)
+                elif key == "participants" and isinstance(value, list):
+                    conversation_copy[key] = [str(p) if isinstance(p, ObjectId) else p for p in value]
+            
+            # Use the explicit copy with string IDs
+            conversation = conversation_copy
+            conversation["id"] = conversation.pop("_id")
+            conversation["messages"] = messages
+            
+            return conversation
+        except Exception as convert_error:
+            print(f"Error converting ObjectIds: {convert_error}")
+            raise
     except HTTPException as e:
         raise e
     except Exception as e:
-        logger.error(f"Error retrieving conversation: {e}")
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"Detailed error: {error_detail}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/chats/summarize", status_code=200)
