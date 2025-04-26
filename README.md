@@ -157,7 +157,3 @@ For production deployment, consider:
 - Using HTTPS/TLS
 - Securing the MongoDB instance
 - Implementing rate limiting
-
-## License
-
-[MIT License](LICENSE)
